@@ -4,6 +4,7 @@ const cors = require('cors');
 const md5 = require('md5');
 const app = express();
 const { body, validationResult } = require('express-validator');
+const jwt = require('jsonwebtoken')
 
 const db = mysql.createConnection({
     host: 'localhost',
@@ -30,7 +31,7 @@ app.post("/api/register",
         min: 8
     }),
     body('phnumber').isNumeric().isLength({
-        min:10,
+        min: 10,
     }),
     (req, res) => {
         const errors = validationResult(req);
@@ -59,6 +60,25 @@ app.post("/api/register",
         })
     });
 
+const verifyJWT = (req, res, next) => {
+    const token = req.headers["x-access-token"];
+    if(!token){
+        res.send("User Not Authenticated, We need token");
+    }else{
+        jwt.verify(token, "jwtSecret", (err, decoded)=>{
+            if(err){
+                res.json({auth:false, message:"Failed to authenticate"});
+            }else{
+                req.parseID = decoded.id;
+                next();
+            }
+        })
+    }
+}
+app.get("/isUserAuth", verifyJWT, (req, res)=>{
+    res.send("User Authenticated");
+})
+
 app.post("/api/login",
     body('email').isEmail().normalizeEmail(),
     (req, res) => {
@@ -75,19 +95,24 @@ app.post("/api/login",
             const password = md5(req.body.password);
             const sqlSelect = "SELECT * FROM userdetails WHERE email=? AND password=?";
             db.query(sqlSelect, [email, password], (err, result) => {
-                if(err){
-                    res.sen({ err: err })
+                if (err) {
+                    res.send({ err: err })
                 }
-                if(result.length > 0){
-                    res.send(result);
+                if (result.length > 0) {
+                    const id = result[0].id;
+                    const token = jwt.sign({id}, "jwtSecret", {
+                        expiresIn: 10,
+                    })
+                    req.session.user = result;
+                    res.json({auth: true, token: token, result: result})   
                 }
-                else{
-                    res.send({ message: "Username and Password mismatch"} );
+                else {
+                    res.send({ message: "Username and Password mismatch" });
                 }
             });
         }
     });
-    
+
 app.listen(3001, () => {
     console.log("3001");
 });
